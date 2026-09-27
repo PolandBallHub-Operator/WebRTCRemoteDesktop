@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using NAudio.Wave;
 
 namespace EchoRemote.WinForms;
 
@@ -35,14 +36,20 @@ internal sealed class MainForm : Form
     private readonly Button refreshButton = new() { Text = "画面一覧を更新", AutoSize = true };
     private readonly Button exitButton = new() { Text = "終了", AutoSize = true };
     private readonly System.Windows.Forms.Timer frameTimer = new() { Interval = 200 };
+    private readonly System.Windows.Forms.Timer audioSendTimer = new() { Interval = 20 };
     private readonly string configPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "EchoRemote", "settings.json");
     private readonly object screenLock = new();
     private bool pageReady;
+    private volatile bool audioBroadcastEnabled;
+    private volatile WasapiLoopbackCapture? audioCapture;
+    private volatile int audioSampleRate = 48000;
+    private long audioGeneration;
     private string? browserPeerId;
     private PeerData? currentData;
     private DisplaySetting currentSetting = new("clone", true, 1280);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> chunkAcks = new();
     private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> fileRejects = new();
+    private readonly ConcurrentQueue<byte[]> audioPackets = new();
 
     public MainForm()
     {
@@ -58,6 +65,7 @@ internal sealed class MainForm : Form
         refreshButton.Click += (_, _) => RefreshDisplays();
         exitButton.Click += (_, _) => Close();
         frameTimer.Tick += (_, _) => CaptureFrame();
+        audioSendTimer.Tick += (_, _) => SendAudioPackets();
         FormClosing += (_, _) => StopPeer();
         Shown += async (_, _) => await InitializePeerViewAsync();
     }
@@ -127,7 +135,24 @@ internal sealed class MainForm : Form
         await SendToPeerPageAsync(new { cmd = "start", peerId = peerIdBox.Text.Trim(), password, name = nameBox.Text.Trim(), accept = acceptBox.Checked });
     }
 
-    private async Task SendToPeerPageAsync(object message)
+    private Task SendToPeerPageAsync(object message)
+    {
+        if (peerView.IsDisposed || !peerView.IsHandleCreated) return Task.CompletedTask;
+        if (!peerView.InvokeRequired) return SendToPeerPageOnUiAsync(message);
+        var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            peerView.BeginInvoke(new Action(async () =>
+            {
+                try { await SendToPeerPageOnUiAsync(message); completion.TrySetResult(true); }
+                catch (Exception ex) { completion.TrySetException(ex); }
+            }));
+        }
+        catch (Exception ex) { completion.TrySetException(ex); }
+        return completion.Task;
+    }
+
+    private async Task SendToPeerPageOnUiAsync(object message)
     {
         if (peerView.CoreWebView2 is null) return;
         await peerView.CoreWebView2.ExecuteScriptAsync($"window.hostMessage({JsonSerializer.Serialize(JsonSerializer.Serialize(message))})");
@@ -189,6 +214,7 @@ internal sealed class MainForm : Form
                 case "disconnected":
                     currentData = null; browserPeerId = null;
                     frameTimer.Stop();
+                    StopAudio();
                     UpdateStatus("ブラウザが切断しました");
                     break;
                 case "error":
@@ -251,8 +277,151 @@ internal sealed class MainForm : Form
             case "key":
                 if (data.TryGetProperty("key", out var key)) SendVirtualKey(key.GetInt32(), data.TryGetProperty("down", out var down) && down.GetBoolean());
                 break;
+            case "audio":
+                var audioOn = data.TryGetProperty("enabled", out var audioEnabled) && audioEnabled.GetBoolean();
+                BeginInvoke(new Action(() => { if (audioOn) StartAudio(); else StopAudio(); }));
+                break;
         }
     }
+
+    private void StartAudio()
+    {
+        if (audioCapture is not null) return;
+        try
+        {
+            var capture = new WasapiLoopbackCapture();
+            var generation = Interlocked.Increment(ref audioGeneration);
+            audioCapture = capture;
+            audioSampleRate = capture.WaveFormat.SampleRate;
+            audioBroadcastEnabled = true;
+            capture.DataAvailable += (sender, e) =>
+            {
+                if (!audioBroadcastEnabled || generation != Interlocked.Read(ref audioGeneration) || e.BytesRecorded <= 0) return;
+                try
+                {
+                    var pcm = ToStereoPcm16(e.Buffer, e.BytesRecorded, capture.WaveFormat, out var channels);
+                    if (pcm.Length == 0) return;
+                    audioPackets.Enqueue(pcm);
+                    while (audioPackets.Count > 20) audioPackets.TryDequeue(out _);
+                }
+                catch (Exception ex) { Debug.WriteLine("Audio frame: " + ex.Message); }
+            };
+            capture.RecordingStopped += (sender, e) =>
+            {
+                if (generation == Interlocked.Read(ref audioGeneration))
+                {
+                    audioBroadcastEnabled = false;
+                    if (InvokeRequired)
+                    {
+                        try { BeginInvoke(new Action(() => audioSendTimer.Stop())); } catch { }
+                    }
+                    else audioSendTimer.Stop();
+                    while (audioPackets.TryDequeue(out _)) { }
+                    if (ReferenceEquals(audioCapture, capture)) audioCapture = null;
+                }
+                capture.Dispose();
+                if (e.Exception is not null && generation == Interlocked.Read(ref audioGeneration))
+                {
+                    currentData?.Send(new { type = "audio-state", enabled = false, message = "Windows音声の取得を停止しました" });
+                    UpdateStatus("Windows音声取得エラー: " + e.Exception.Message);
+                }
+            };
+            capture.StartRecording();
+            while (audioPackets.TryDequeue(out _)) { }
+            audioSendTimer.Start();
+            currentData?.Send(new { type = "audio-state", enabled = true });
+            UpdateStatus("Windowsシステム音声をEchoへ配信中");
+        }
+        catch (Exception ex)
+        {
+            audioBroadcastEnabled = false;
+            audioCapture?.Dispose(); audioCapture = null;
+            currentData?.Send(new { type = "audio-state", enabled = false, message = "Windows音声を開始できませんでした" });
+            UpdateStatus("Windows音声を開始できません: " + ex.Message);
+        }
+    }
+
+    private void StopAudio()
+    {
+        audioBroadcastEnabled = false;
+        Interlocked.Increment(ref audioGeneration);
+        audioSendTimer.Stop();
+        while (audioPackets.TryDequeue(out _)) { }
+        var capture = audioCapture;
+        audioCapture = null;
+        if (capture is not null)
+        {
+            try { capture.StopRecording(); }
+            catch { capture.Dispose(); }
+        }
+        currentData?.Send(new { type = "audio-state", enabled = false });
+    }
+
+    private void SendAudioPackets()
+    {
+        var sink = currentData;
+        if (!audioBroadcastEnabled || sink is null || browserPeerId is null) return;
+        var parts = new List<byte[]>(8);
+        var total = 0;
+        while (audioPackets.TryDequeue(out var packet) && total + packet.Length <= 24 * 1024)
+        {
+            parts.Add(packet);
+            total += packet.Length;
+        }
+        if (total == 0) return;
+        var merged = new byte[total];
+        var offset = 0;
+        foreach (var part in parts) { Buffer.BlockCopy(part, 0, merged, offset, part.Length); offset += part.Length; }
+        _ = sink.Send(new { type = "audio-data", sampleRate = audioSampleRate, channels = 2, data = Convert.ToBase64String(merged) });
+    }
+
+    private static byte[] ToStereoPcm16(byte[] source, int length, WaveFormat format, out int outputChannels)
+    {
+        var inputChannels = Math.Max(1, format.Channels);
+        outputChannels = 2;
+        var frameBytes = Math.Max(1, format.BlockAlign);
+        var frames = length / frameBytes;
+        if (frames == 0) return Array.Empty<byte>();
+        var bytesPerSample = Math.Max(1, format.BitsPerSample / 8);
+        var output = new byte[frames * outputChannels * 2];
+        var floatSamples = format.Encoding == WaveFormatEncoding.IeeeFloat ||
+            (format is WaveFormatExtensible extensible && extensible.SubFormat == IeeeFloatSubformat);
+        for (var frame = 0; frame < frames; frame++)
+        {
+            var left = 0.0; var right = 0.0; var leftCount = 0; var rightCount = 0;
+            for (var channel = 0; channel < inputChannels; channel++)
+            {
+                var sample = ReadLoopbackSample(source, frame * frameBytes + channel * bytesPerSample, format.BitsPerSample, floatSamples);
+                if (inputChannels == 1 || channel % 2 == 0) { left += sample; leftCount++; }
+                if (inputChannels == 1 || channel % 2 == 1) { right += sample; rightCount++; }
+            }
+            var baseIndex = frame * outputChannels * 2;
+            WritePcm16(output, baseIndex, left / Math.Max(1, leftCount));
+            if (outputChannels == 2) WritePcm16(output, baseIndex + 2, right / Math.Max(1, rightCount));
+        }
+        return output;
+    }
+
+    private static double ReadLoopbackSample(byte[] data, int offset, int bits, bool floatSamples)
+    {
+        if (floatSamples && bits == 32) return Math.Clamp(BitConverter.ToSingle(data, offset), -1f, 1f);
+        return bits switch
+        {
+            8 => (data[offset] - 128) / 128.0,
+            16 => BitConverter.ToInt16(data, offset) / 32768.0,
+            24 => ((data[offset] | data[offset + 1] << 8 | data[offset + 2] << 16) << 8 >> 8) / 8388608.0,
+            32 => BitConverter.ToInt32(data, offset) / 2147483648.0,
+            _ => 0.0
+        };
+    }
+
+    private static void WritePcm16(byte[] output, int offset, double sample)
+    {
+        var value = (short)Math.Round(Math.Clamp(sample, -1.0, 1.0) * 32767.0);
+        output[offset] = (byte)(value & 0xff); output[offset + 1] = (byte)((value >> 8) & 0xff);
+    }
+
+    private static readonly Guid IeeeFloatSubformat = new("00000003-0000-0010-8000-00aa00389b71");
 
     private void ApplyPointer(JsonElement data)
     {
@@ -436,7 +605,7 @@ internal sealed class MainForm : Form
         foreach (var s in Screen.AllScreens) screenBox.Items.Add(new ScreenChoice(s, $"{(s.Primary ? "メイン" : "拡張")}: {s.DeviceName}  ({s.Bounds.Width}×{s.Bounds.Height})"));
         var wanted = currentSetting.Mode == "extend" ? Screen.AllScreens.FirstOrDefault(s => !s.Primary) : Screen.PrimaryScreen;
         var idx = 0;
-        if (wanted is not null) for (var i = 0; i < screenBox.Items.Count; i++) if (((ScreenChoice)screenBox.Items[i]).Screen.DeviceName == wanted.DeviceName) { idx = i; break; }
+        if (wanted is not null) for (var i = 0; i < screenBox.Items.Count; i++) if (screenBox.Items[i] is ScreenChoice candidate && candidate.Screen.DeviceName == wanted.DeviceName) { idx = i; break; }
         if (screenBox.Items.Count > 0) screenBox.SelectedIndex = idx;
         statusValue.Text = $"検出ディスプレイ: {Screen.AllScreens.Length}台";
     }
@@ -444,6 +613,7 @@ internal sealed class MainForm : Form
     private void StopPeer()
     {
         if (frameTimer.Enabled) frameTimer.Stop();
+        StopAudio();
         if (pageReady) _ = SendToPeerPageAsync(new { cmd = "stop" });
         currentData = null; browserPeerId = null;
         startButton.Enabled = true; stopButton.Enabled = false;

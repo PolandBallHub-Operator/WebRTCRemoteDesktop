@@ -1,13 +1,12 @@
 # Echo Show Remote
 
-WebRTC peerjsとexeの連携はめちゃムズイ。AIの協力により何とか実現
--https://polandballhub-operator.github.io/WebRTCRemoteDesktop/
-clientをwindowsにいんすとーるして
+Echo Showのブラウザから、利用者自身が所有・管理するWindows PCの画面を見て、タッチ／ドラッグ操作と文字入力を行う試作です。ブラウザ部分は**HTML / CSS / JavaScriptのみ**、PCクライアントは**.NET 8 WinForms**です。React、JSX/TSX、React Native、Tailwind CSSは使用していません。
+
 
 ## 構成
 
 - `web/` — Echo Showのブラウザで開くHTML / CSS / JavaScript
-- `windows-client/` — .NET 8 Windows Forms PCクライアント。画面取得、PeerJS、WebRTC、OS入力、ファイル送信を担当
+- `windows-client/` — .NET 8 Windows Forms PCクライアント。画面取得、PeerJS、WebRTC、OS入力、WASAPIシステム音声、ファイル送信を担当
 - WebRTCの映像・操作データはPCとブラウザの間でP2P送信します。PeerJS Cloudは接続シグナリングに使い、映像データを中継しません。
 
 ## 起動手順
@@ -47,10 +46,10 @@ python3 -m http.server 8080 --bind 0.0.0.0
 
 1. `Add My PC` でPC名、PCクライアントに表示されたPeerJSコード、同じ接続パスワードを登録します。
 2. `Connect PC` から登録PCを選択します。接続・認証後、PCの画面が画面いっぱいに表示されます。
-3. 画面をタッチ／ドラッグするとマウス入力を送ります。右下の **A** から文字を入力して送信できます。
-4. 下向き矢印またはファイルアイコンを押すと、PC側でファイル選択画面が開きます。選んだファイルはブラウザ端末内のIndexedDBに保存され、`Get file from Windows` から閲覧・削除できます。
-5. `Settings` の「配信解像度」で横幅の上限を640〜3840 pxから選べます。既定値は1280 pxで、変更は接続中のPCへすぐ反映されます。
-6. 全画面ボタンはブラウザの全画面表示を要求します。ブラウザ設定やEcho Showのバージョンにより動作しない場合は、Silkの全画面表示機能を利用してください。
+3. 画面をタッチ／ドラッグするとマウス入力を送ります。浮動ボタン **A** から文字を入力、下矢印からPCファイルの受信、**♪** からWindowsシステム音声の再生を切り替えられます。
+4. 浮動ボタン **⛶** で全画面表示、ツールバーの **⌄** で操作バーを隠して映像を全面表示します。隠した後は右下の **⋯** から操作バーを戻せます。Escキーでもブラウザの全画面を解除できます。
+5. `Settings` の「配信解像度」で横幅の上限を640〜3840 pxから、「App DPI」でUI倍率を75〜150%から選べます。解像度はPC画面配信へ、DPIはEcho Showアプリの表示へ反映します。
+6. 受信したファイルはブラウザ端末内のIndexedDBに保存され、`Get file from Windows` から閲覧・削除できます。
 
 ## Windowsの画面モードについて
 
@@ -72,6 +71,7 @@ TXT / MD / CSV / JSON / XMLはテキストプレビュー、MP4 / WebMは動画�
 - Echo ShowのPC登録パスワードはブラウザのlocalStorage、受信ファイルはIndexedDBに保存します。共有・公共端末では利用せず、不要になったPC登録とファイルを削除してください。
 - PCクライアントは管理者権限で入力を送ります。本人が管理するPCだけに使用し、接続パスワードを共有しないでください。
 - Windowsのロック画面、UACセキュアデスクトップ、保護された動画などはキャプチャ・操作できません。管理者権限はこれらの保護を回避するものではありません。
+- **Windows音声ボタン**は押したときだけ、Windowsの既定再生デバイスから出るシステム音声をEcho側へ送ります。PC全体の音声を送るため、会話や通知音も含まれます。必要なときだけONにし、停止または切断で音声送信も停止してください。再生先はブラウザ（Echo Show）の既定出力デバイスです。
 - 画面配信は約5fps、既定の最大幅1280pxです。解像度を最大3840pxまで上げられますが、元のWindows画面より高解像度にはならず、高く設定するほど通信量とPC負荷が増えます。遅延・画質はPCとネットワーク状況に依存します。
 - PeerJSコードは公開サービス上の接続先IDです。推測されやすい固定IDより、PC側のランダムIDを推奨します。
 
@@ -79,5 +79,6 @@ TXT / MD / CSV / JSON / XMLはテキストプレビュー、MP4 / WebMは動画�
 
 - [PeerJS](https://github.com/peers/peerjs) — MIT License。ブラウザとWebView2内からCDNで読み込んで使用します。PeerJSの配布条件に従い、再配布物を作る際はライセンスと著作権表示を同梱してください。
 - [Microsoft.Web.WebView2](https://www.nuget.org/packages/Microsoft.Web.WebView2) — MicrosoftのNuGetパッケージ。Microsoftの該当利用条件に従います。
+- [NAudio.Wasapi 2.2.1](https://www.nuget.org/packages/NAudio.Wasapi/2.2.1) — Windows既定出力のWASAPI loopback音声取得に使用。NAudioはMIT Licenseです。
 
 このリポジトリにReact、React Native、Tailwind CSS、TypeScript、JSXは含まれていません。
