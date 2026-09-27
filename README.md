@@ -1,6 +1,8 @@
 # Echo Show Remote
 
 WebRTC peerjsとexeの連携はめちゃムズイ。AIの協力により何とか実現
+-https://polandballhub-operator.github.io/WebRTCRemoteDesktop/
+clientをwindowsにいんすとーるして
 
 ## 構成
 
