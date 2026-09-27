@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#08152d">
+  <title>Echo Remote</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <main id="home" class="screen">
+    <header class="home-header">HOME CONTENT</header>
+    <nav class="main-menu" aria-label="メニュー">
+      <button class="menu-row" id="add-pc"><span class="row-copy"><strong>Add My PC</strong><small>PeerJSコードと接続パスワードを登録</small></span></button>
+      <button class="menu-row" id="open-connect"><span class="row-copy"><strong>Connect PC</strong><small id="pc-count">登録済みPC 0台</small></span></button>
+      <button class="menu-row" id="open-files"><span class="row-copy"><strong>Get file from Windows</strong><small>受信したファイルを閲覧・管理</small></span></button>
+      <button class="menu-row" id="open-settings"><span class="row-copy"><strong>Settings</strong><small>画面モードと配信解像度</small></span></button>
+    </nav>
+    <span id="peer-status" class="visually-hidden" aria-live="polite">PeerJS signalingを待機中</span>
+  </main>
+
+  <section id="connect-screen" class="screen sub-screen hidden">
+    <header class="sub-header"><button class="back-button" data-home aria-label="戻る">‹</button><h1>Connect PC</h1><button class="header-action" id="connect-add" aria-label="PCを登録">＋</button></header>
+    <div class="page-content"><div id="pc-list" class="pc-list"></div><div class="empty-state" id="pc-empty"><strong>登録されたPCはありません</strong></div></div>
+  </section>
+
+  <section id="settings-screen" class="screen sub-screen hidden">
+    <header class="sub-header"><button class="back-button" data-home aria-label="戻る">‹</button><h1>Settings</h1></header>
+    <div class="page-content settings-content">
+      <article class="setting-row"><div><strong>Windows Display Mode</strong><small>実在する画面の複製／拡張</small></div><select id="display-mode" aria-label="画面モード"><option value="clone">複製</option><option value="extend">拡張</option></select></article>
+      <article class="setting-row"><div><strong>配信解像度</strong><small>横幅の上限</small></div><select id="stream-resolution" aria-label="配信解像度"><option value="640">640 px</option><option value="960">960 px</option><option value="1280">1280 px</option><option value="1600">1600 px</option><option value="1920">1920 px</option><option value="2560">2560 px</option><option value="3840">3840 px</option></select></article>
+      <article class="setting-row"><div><strong>Echo Showに合わせる</strong></div><label class="switch"><input type="checkbox" id="fit-screen" checked><span></span></label></article>
+      <article class="setting-row"><div><strong>画面スリープを防止</strong></div><label class="switch"><input type="checkbox" id="keep-awake"><span></span></label></article>
+    </div>
+  </section>
+
+  <section id="files-screen" class="screen sub-screen hidden">
+    <header class="sub-header"><button class="back-button" data-home aria-label="戻る">‹</button><h1>File Manager</h1></header>
+    <div class="page-content"><div id="file-list" class="file-list"></div><div class="empty-state" id="files-empty"><strong>保存されたファイルはありません</strong></div></div>
+  </section>
+
+  <section id="viewer-screen" class="viewer-screen hidden">
+    <header class="viewer-top"><button id="exit-viewer" aria-label="戻る">‹</button><strong id="viewer-device">Windows PC</strong><span id="live-indicator">LIVE</span><button id="fullscreen" aria-label="全画面表示">⛶</button><button id="viewer-files" aria-label="ファイルを受信">↓</button><button id="disconnect" aria-label="切断">×</button></header>
+    <div id="video-stage"><video id="remote-video" autoplay playsinline></video><div id="video-message">PC画面の接続を待っています…</div></div>
+    <div id="keyboard-panel" class="keyboard-panel hidden"><div class="keyboard-head"><span>文字入力</span><button id="keyboard-close" aria-label="閉じる">×</button></div><textarea id="remote-text" rows="2" placeholder="文字を入力"></textarea><button id="send-text" class="pill-button">送信</button></div>
+    <div class="viewer-controls"><button class="floating-key" id="keyboard-toggle" aria-label="文字入力">A</button></div>
+  </section>
+
+  <dialog id="add-dialog" class="dialog"><form method="dialog" id="add-form"><header><h2>Add My PC</h2><button class="dialog-close" value="cancel" aria-label="閉じる">×</button></header><label>PC名<input id="pc-name" maxlength="40" placeholder="書斎のPC" required></label><label>PeerJSコード<input id="peer-code" maxlength="100" autocomplete="off" placeholder="Windowsクライアントのコード" required></label><label>接続パスワード<input id="peer-password" maxlength="100" autocomplete="off" type="password" required></label><div class="dialog-actions"><button class="pill-button muted" value="cancel">キャンセル</button><button class="pill-button" id="save-pc" value="default">登録</button></div></form></dialog>
+
+  <dialog id="file-preview" class="preview-dialog"><div class="preview-head"><strong id="preview-title"></strong><button id="preview-close" aria-label="閉じる">×</button></div><div id="preview-body"></div></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
