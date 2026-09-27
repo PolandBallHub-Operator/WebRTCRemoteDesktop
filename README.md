@@ -1,8 +1,6 @@
 # Echo Show Remote
 
-Echo Showのブラウザから、利用者自身が所有・管理するWindows PCの画面を見て、タッチ／ドラッグ操作と文字入力を行う試作です。ブラウザ部分は**HTML / CSS / JavaScriptのみ**、PCクライアントは**.NET 8 WinForms**です。React、JSX/TSX、React Native、Tailwind CSSは使用していません。
-
-> Echo Show本体の筐体やベゼルは描画しません。画面いっぱいにUIを表示します。添付参考画像の濃紺パネル、細い区切り線、行形式の設定UIをモチーフにしています。
+WebRTC peerjsとexeの連携はめちゃムズイ。AIの協力により何とか実現
 
 ## 構成
 
