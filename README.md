@@ -33,7 +33,8 @@ dotnet build -c Release
 
 ### 2. WebUI
 
-- https://polandballhub-operator.github.io/WebRTCRemoteDesktop/　公式ui
+- https://polandballhub-operator.github.io/WebRTCRemoteDesktop/
+- 公式ui
 
 `web/` をHTTPSで配信し、Echo ShowのSilkブラウザからそのHTTPS URLを開きます。開発PCからは次のように静的配信できます。
 
