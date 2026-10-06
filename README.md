@@ -1,4 +1,5 @@
-# Echo Show Remote
+# WebRTCRemoteDesktop
+RD with PeerJS
 
 Echo Showのブラウザから、利用者自身が所有・管理するWindows PCの画面を見て、タッチ／ドラッグ操作と文字入力を行う試作です。ブラウザ部分は**HTML / CSS / JavaScriptのみ**、PCクライアントは**.NET 8 WinForms**です。React、JSX/TSX、React Native、Tailwind CSSは使用していません。
 
