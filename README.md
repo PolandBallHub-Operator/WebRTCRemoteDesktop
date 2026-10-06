@@ -6,7 +6,7 @@ Echo Showのブラウザから、利用者自身が所有・管理するWindows 
 ## 構成
 
 - `web/` — Echo Showのブラウザで開くHTML / CSS / JavaScript
-- `windows-client/` — .NET 8 Windows Forms PCクライアント。画面取得、PeerJS、WebRTC、OS入力、WASAPIシステム音声、ファイル送信を担当
+- `windows-client/` — .NET 8 Windows Forms PCクライアント。画面取得、PeerJS、WebRTC、OS入力、WASAPIシステム音声(不安定。現状はEchoにpc音声をBT接続するべきです)、ファイル送信を担当
 - WebRTCの映像・操作データはPCとブラウザの間でP2P送信します。PeerJS Cloudは接続シグナリングに使い、映像データを中継しません。
 
 ## 起動手順
