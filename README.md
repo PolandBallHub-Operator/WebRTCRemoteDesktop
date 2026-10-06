@@ -31,7 +31,9 @@ dotnet build -c Release
 
 設定はユーザーの `%APPDATA%\EchoRemote\settings.json` に保存します。パスワードもこのローカル設定ファイルに保存されるため、WindowsユーザーアカウントとPCを保護してください。
 
-### 2. ブラウザUI
+### 2. WebUI
+
+- https://polandballhub-operator.github.io/WebRTCRemoteDesktop/　公式ui
 
 `web/` をHTTPSで配信し、Echo ShowのSilkブラウザからそのHTTPS URLを開きます。開発PCからは次のように静的配信できます。
 
